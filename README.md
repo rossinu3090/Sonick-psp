@@ -1,2 +1,3 @@
 hi 
 thank you for coming thos far, this is my first time putting up up a github repo and well I'm dont really know much of what im doing, I bought a psp 1000 a while ago and had it for some time now, I kept looking for any good sonic homebrow but I couldn't so I tryrd to make one myself, im pretty rookie at making psp EBOOT.PBPs and anything for psp in general an I was Curious to see what Cloude ai can do and so with the help of Cloud and a 2 week worth of working on this i made this games, i haven't really had time to test it so I'll be vary happy if people who tryed it massaged me and give me tips and what else thay think the games lacks‌, and again I thank you for your time
+reddit: upstairspiece5331
