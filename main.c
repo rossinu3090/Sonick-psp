@@ -1,5 +1,6 @@
 /* Sonic PSP fan game - SDL2 / pspdev. All art is placeholder rectangles. */
 #include <SDL.h>
+#include "tiles.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,7 @@
 #define GROUND 200
 #define PH 22
 enum { B_TRI, B_CIR, B_CRO, B_SQU, B_L, B_R, B_DN, B_LF, B_UP, B_RT, B_SEL, B_STA };
-enum { S_MENU, S_SEL, S_CTRL, S_PLAY, S_CLEAR, S_END };
+enum { S_MENU, S_SEL, S_CTRL, S_PLAY, S_CLEAR, S_END, S_ABOUT };
 enum { SPINDASH, AIRBOOST, TELEPORT, SPEAR, HOVER, WAVE, SLAM, WHIP, HAMMER, HAMJUMP, FLY, SWIPE, GLIDE, PUNCH };
 
 typedef struct { const char *name; float spd, jmp; int r, g, b; int ka, kb; const char *na, *nb; } Ch;
@@ -25,7 +26,7 @@ static const Ch CH[9] = {
  {"KNUCKLES",1.0f, 0.95f,220,  40,  40, GLIDE,    PUNCH,    "GLIDE",         "PUNCH DASH"},
  {"METAL OVERLORD",1.0f,1.0f,150, 155, 175, HOVER,    SPEAR,    "JET HOVER",     "LASER BLAST"},
  {"METAL SONIC",1.05f,1.0f, 60,  80, 190, AIRBOOST, WAVE,     "ROCKET DASH",   "ELECTRO SHOCK"}};
-static const char *ZONE[3] = {"LEAF FOREST", "NEON CITY", "SKY FORTRESS"};
+static const char *ZONE[3] = {"TECHNO BASE", "NEON CITY", "SKY FORTRESS"};
 static const char *BOSSNAME[3] = {"EGGMAN", "EGGMAN", "EGGMAN METAL OVERLORD"};
 
 /* ---- tiny 3x5 font ---- */
@@ -69,8 +70,29 @@ static void ctext(const char *s, int y, int sc, int r, int g, int b) {
   text(s, (W - (int)strlen(s) * 4 * sc) / 2, y, sc, r, g, b);
 }
 
+/* ---- tile textures (Stage 1 art, built into tiles.h) ---- */
+static SDL_Texture *TT[TILE_N];
+static void loadTiles(void) {
+  for (int t = 0; t < TILE_N; t++) {
+    SDL_Surface *sf = SDL_CreateRGBSurface(0, 96, 96, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+    if (!sf) continue;
+    Uint32 *p = (Uint32 *)sf->pixels;
+    for (int i = 0; i < 96 * 96; i++) p[i] = TILE_PAL[TILE_DATA[t][i]];
+    TT[t] = SDL_CreateTextureFromSurface(R, sf);
+    if (TT[t]) SDL_SetTextureBlendMode(TT[t], SDL_BLENDMODE_BLEND);
+    SDL_FreeSurface(sf);
+  }
+}
+/* draw part (sx,sy,sw,sh) of tile t at (dx,dy) sized (dw,dh), tinted r,g,b */
+static void tile(int t, int sx, int sy, int sw, int sh, int dx, int dy, int dw, int dh, int r, int g, int b) {
+  if (!TT[t]) return;
+  SDL_Rect a = {sx, sy, sw, sh}, d = {dx, dy, dw, dh};
+  SDL_SetTextureColorMod(TT[t], r, g, b);
+  SDL_RenderCopy(R, TT[t], &a, &d);
+}
+
 /* ---- game state ---- */
-static int state = S_MENU, msel, csel, zone, act, cheat, realEm, paused;
+static int state = S_MENU, msel, csel, zone, act, cheat, realEm, paused, psel;
 static int got[9][2];
 #define LV (zone * 3 + act)
 #define ISBOSS (act == 2)
@@ -215,8 +237,16 @@ static void updateBoss(void) {
 
 static void updatePlay(void) {
   const Ch *c = &CH[P.who];
-  if (PRESSED(B_STA)) paused = !paused;
-  if (paused) return;
+  if (PRESSED(B_STA)) { paused = !paused; psel = 0; sfx(SF_MENU); }
+  if (paused) {
+    if (PRESSED(B_UP) || PRESSED(B_DN)) { psel = !psel; sfx(SF_MENU); }
+    if (PRESSED(B_CRO)) {
+      sfx(SF_MENU);
+      if (psel == 0) paused = 0;          /* RESUME */
+      else { paused = 0; state = S_MENU; } /* EXIT LEVEL -> main menu */
+    }
+    return;
+  }
   if (PRESSED(B_SEL)) {
     if (P.super) P.super = 0;
     else if (EM() >= 7 && P.rings >= 10) { P.super = 1; P.sct = 0; sfx(SF_SUPER); }
@@ -342,6 +372,21 @@ static void drawPlay(void) {
   const int *s = sky[zone], *g = gr[zone];
   SDL_SetRenderDrawColor(R, s[0], s[1], s[2], 255); SDL_RenderClear(R);
   float cam = P.x - 200; if (cam < 0) cam = 0; if (cam > LEN + 100 - W) cam = LEN + 100 - W;
+  if (zone == 0) {
+    /* Stage 1 background from the tile rip: dark sky, far girders, ceiling girders */
+    rect(0, 0, W, GROUND, 18, 26, 54);
+    rect(0, 90, W, 60, 24, 34, 70);
+    int base = (int)(cam * 0.25f), first = base / 48;
+    for (int k = -1; k < W / 48 + 2; k++) {            /* far layer: tinted dark */
+      int n = first + k, dx = n * 48 - base;
+      tile(2 + (n & 1), 0, 0, 96, 96, dx, 70, 48, 48, 60, 70, 110);
+    }
+    base = (int)(cam * 0.5f); first = base / 48;
+    for (int k = -1; k < W / 48 + 2; k++) {            /* near layer: ceiling girders */
+      int n = first + k, dx = n * 48 - base;
+      tile(n & 1, 0, 0, 96, 96, dx, 0, 48, 48, 150, 160, 200);
+    }
+  } else
   for (int x = 0; x < W; x += 8) {
     int h = 30 + (int)(25 * sinf((x + cam * 0.3f) / 40.0f));
     rect(x, GROUND - h, 8, h, s[0] * 2 / 3, s[1] * 2 / 3 + 20, s[2] * 2 / 3);
@@ -349,11 +394,22 @@ static void drawPlay(void) {
   for (int x = 0; x < W; x += 16) {
     float wx = cam + x; wx -= fmodf(wx, 16);
     if (solid(wx + 8)) {
-      int k = ((int)wx / 16) & 1;
-      rect(x - (int)fmodf(cam, 16), GROUND, 16, H - GROUND, g[0] - k * 20, g[1] - k * 20, g[2] - k * 20);
+      int k = ((int)wx / 16) & 1, dx = x - (int)fmodf(cam, 16);
+      if (zone == 0) {   /* steel floor: girder tile on top, dark metal below */
+        rect(dx, GROUND, 16, H - GROUND, 34 - k * 6, 40 - k * 6, 70 - k * 8);
+        tile(2 + (((int)wx / 96) & 1), ((int)wx % 48) * 2, 0, 32, 48, dx, GROUND - 3, 16, 24, 255, 255, 255);
+      } else
+      rect(dx, GROUND, 16, H - GROUND, g[0] - k * 20, g[1] - k * 20, g[2] - k * 20);
     }
   }
-  for (int i = 0; i < np; i++) rect(px[i] - (int)cam, py[i], pw[i], 8, g[0], g[1], g[2]);
+  for (int i = 0; i < np; i++) {
+    if (zone == 0) {  /* floating girder platforms */
+      for (int xx = 0; xx < pw[i]; xx += 16) {
+        int w = pw[i] - xx < 16 ? pw[i] - xx : 16;
+        tile(3, (xx % 48) * 2, 0, w * 2, 44, px[i] + xx - (int)cam, py[i] - 3, w, 22, 255, 255, 255);
+      }
+    } else rect(px[i] - (int)cam, py[i], pw[i], 8, g[0], g[1], g[2]);
+  }
   for (int i = 0; i < nr; i++) if (!rt[i]) rect(rx[i] - (int)cam, ry[i], 8, 8, 255, 220, 0);
   for (int i = 0; i < nem; i++) if (!got[LV][i]) rect(emx[i] - (int)cam, emy[i], 14, 14, 60, 255, 120);
   for (int e = 0; e < nen; e++) if (en[e].alive) {
@@ -399,19 +455,26 @@ static void drawPlay(void) {
   if (P.super && P.who == 8) text("NEO METAL SONIC", 350, 6, 2, 255, 90, 30);
   else if (P.super) text("SUPER", 420, 6, 2, 255, 215, 0);
   else if (EM() >= 7) text("SELECT: SUPER", 330, 6, 1, 255, 215, 0);
-  if (paused) ctext("PAUSED", 120, 4, 255, 255, 255);
+  if (paused) {
+    rect(130, 70, 220, 130, 255, 255, 255);
+    rect(134, 74, 212, 122, 20, 25, 60);
+    ctext("PAUSED", 84, 3, 255, 215, 0);
+    ctext(psel == 0 ? "> RESUME" : "  RESUME", 130, 2, psel == 0 ? 255 : 150, psel == 0 ? 255 : 150, psel == 0 ? 80 : 150);
+    ctext(psel == 1 ? "> EXIT LEVEL" : "  EXIT LEVEL", 156, 2, psel == 1 ? 255 : 150, psel == 1 ? 255 : 150, psel == 1 ? 80 : 150);
+  }
 }
 static void drawMenu(void) {
   SDL_SetRenderDrawColor(R, 20, 30, 90, 255); SDL_RenderClear(R);
   ctext("SONIC PSP", 40, 6, 255, 215, 0);
   ctext("FAN GAME", 80, 3, 255, 255, 255);
   const char *it[4] = {"START GAME", cheat ? "CHEAT: ON  7 EMERALDS" : "CHEAT: OFF",
-    allEm ? "ALL EMERALDS: GIVEN" : "GET ALL EMERALDS", "EXIT"};
+    allEm ? "ALL EMERALDS: GIVEN" : "GET ALL EMERALDS", "ABOUT"};
   for (int i = 0; i < 4; i++) {
     char b[40]; snprintf(b, sizeof b, "%s%s", i == msel ? "> " : "  ", it[i]);
     ctext(b, 135 + i * 28, 2, i == msel ? 255 : 150, i == msel ? 255 : 150, i == msel ? 80 : 150);
   }
-  ctext("X: SELECT", 250, 1, 200, 200, 200);
+  ctext("X: SELECT", 242, 1, 200, 200, 200);
+  ctext("STAGE 1 TILES: SEGA / DIMPS / TECHOKAMI RIP", 256, 1, 140, 150, 190);
 }
 static void drawSelect(void) {
   SDL_SetRenderDrawColor(R, 15, 15, 40, 255); SDL_RenderClear(R);
@@ -441,6 +504,23 @@ static void drawCtrl(void) {
   snprintf(b, sizeof b, "PLAYING AS %s", CH[csel].name);
   ctext(b, 215, 2, 255, 255, 120);
   ctext("PRESS X TO START   O: BACK", 245, 1, 200, 200, 200);
+}
+static void drawAbout(void) {
+  SDL_SetRenderDrawColor(R, 10, 20, 50, 255); SDL_RenderClear(R);
+  ctext("ABOUT", 16, 4, 255, 215, 0);
+  static const char *l[] = {
+    "THIS IS A FREE FAN MADE GAME.",
+    "IT USES SETS OF SPRITES FROM",
+    "SONIC ADVANCE, TAKEN FROM",
+    "SPRITERS-RESOURCE.COM",
+    "",
+    "THE SPRITES AND THE SONIC",
+    "CHARACTERS ARE THE WORK OF SEGA.",
+    "",
+    "TILE CREDITS: SEGA, DIMPS AND",
+    "TECHOKAMI (LEVEL RIP)."};
+  for (int i = 0; i < 10; i++) ctext(l[i], 62 + i * 16, 2, 255, 255, 255);
+  ctext("PRESS O OR X TO GO BACK", 248, 1, 200, 200, 200);
 }
 static void drawClear(void) {
   SDL_SetRenderDrawColor(R, 20, 20, 60, 255); SDL_RenderClear(R);
@@ -539,6 +619,7 @@ int main(int argc, char *argv[]) {
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_AUDIO);
   SDL_Window *win = SDL_CreateWindow("Sonic PSP", 0, 0, W, H, 0);
   R = SDL_CreateRenderer(win, -1, 0);
+  loadTiles();
   if (SDL_NumJoysticks() > 0) joy = SDL_JoystickOpen(0);
   SDL_AudioSpec want, have; SDL_zero(want);
   want.freq = 22050; want.format = AUDIO_S16SYS; want.channels = 1; want.samples = 1024; want.callback = audioCb;
@@ -559,7 +640,7 @@ int main(int argc, char *argv[]) {
           if (msel == 0) { zone = act = 0; realEm = 0; memset(got, 0, sizeof got); state = S_SEL; }
           else if (msel == 1) { cheat = !cheat; sfx(SF_EMER); }
           else if (msel == 2) { allEm = 1; sfx(SF_EMER); }
-          else run = 0;
+          else { state = S_ABOUT; sfx(SF_MENU); }
         }
         drawMenu(); break;
       case S_SEL:
@@ -572,6 +653,9 @@ int main(int argc, char *argv[]) {
         if (PRESSED(B_CIR)) state = S_SEL;
         if (PRESSED(B_CRO)) { sfx(SF_SUPER); P.who = csel; paused = 0; startAct(); state = S_PLAY; }
         drawCtrl(); break;
+      case S_ABOUT:
+        if (PRESSED(B_CIR) || PRESSED(B_CRO)) { state = S_MENU; sfx(SF_MENU); }
+        drawAbout(); break;
       case S_PLAY: updatePlay(); drawPlay(); break;
       case S_CLEAR:
         if (PRESSED(B_CRO)) {
