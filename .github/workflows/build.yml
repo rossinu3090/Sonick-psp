@@ -14,11 +14,25 @@ jobs:
         run: psp-pacman -Syu --noconfirm sdl2
       - name: Show where SDL.h lives (helps me debug)
         run: find /usr/local/pspdev -name "SDL.h" ; psp-pkg-config --cflags --libs sdl2 || true
-      - name: Build
-        run: make
-      - name: Save the game file
+      - name: Build PRX version (recommended)
+        run: |
+          make clean || true
+          make BUILD_PRX=1
+          mkdir -p out/prx && cp EBOOT.PBP out/prx/EBOOT.PBP
+          ls -l out/prx
+      - name: Build ELF version (backup)
+        run: |
+          make clean || true
+          make BUILD_PRX=0
+          mkdir -p out/elf && cp EBOOT.PBP out/elf/EBOOT.PBP
+          ls -l out/elf
+      - name: Save PRX game file
         uses: actions/upload-artifact@v4
         with:
-          name: SonicPSP
-          path: EBOOT.PBP
-
+          name: SonicPSP-PRX
+          path: out/prx/EBOOT.PBP
+      - name: Save ELF game file
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonicPSP-ELF
+          path: out/elf/EBOOT.PBP
