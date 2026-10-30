@@ -9,9 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     container: pspdev/pspdev:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install SDL2 for PSP
-        run: psp-pacman -Syu --noconfirm sdl2 || true
+        run: psp-pacman -Syu --noconfirm sdl2
+      - name: Show where SDL.h lives (helps me debug)
+        run: find /usr/local/pspdev -name "SDL.h" ; psp-pkg-config --cflags --libs sdl2 || true
       - name: Build
         run: make
       - name: Save the game file
@@ -19,3 +21,4 @@ jobs:
         with:
           name: SonicPSP
           path: EBOOT.PBP
+
